@@ -101,7 +101,6 @@ def get_word_seq_from_question(q):
     while len(seq) < args.max_seq_len:
         seq.append(np.zeros(args.word_vector_dim))
     seq = np.stack(seq)
-    # seq = np.expand_dims(seq, axis=0)
     return seq
 
 
@@ -131,17 +130,12 @@ def get_data():
     x2 = np.stack(x2)
     y = np.stack(y)
 
-    print x1.shape
-    print x2.shape
-    print y.shape
-
     return x1, x2, y
 
 
 
 if __name__ == "__main__":
     init()
-    # data = get_data()
     x1, x2, y = get_data()
     model = get_model()
     model.fit(x=[x1, x2], y=y, batch_size=1000,
