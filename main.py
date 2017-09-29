@@ -29,13 +29,16 @@ from gensim.models import Word2Vec
 parser = argparse.ArgumentParser(description='')
 parser.add_argument("-wv", type=str, help="word2vec地址",
                     default="/home/xueguoqing01/.keras/models/GoogleNews-vectors-negative300.bin")
-parser.add_argument("-data", type=str, help="全部数据（经过预处理）", default="./data_preprocess")
+parser.add_argument("-train", type=str, help="全部数据（经过预处理）", default="./data_preprocess_train")
+parser.add_argument("-val", type=str, help="全部数据（经过预处理）", default="./data_preprocess_val")
 parser.add_argument("-max_seq_len", type=int, help="最大单词数", default=120)
-parser.add_argument("-word_vector_dim", type=int, help="词向量维度", default=100)
+parser.add_argument("-word_vector_dim", type=int, help="词向量维度", default=300)
 parser.add_argument("-lstm_output_dim", type=int,
                     help="lstm输出维度", default=1000)
 parser.add_argument("-epochs", type=int,
                     help="", default=300)
+parser.add_argument("-batch_size", type=int,
+                    help="", default=10000)
 parser.add_argument("-t", help="是否调试", action="store_true")
 # parser.add_argument("-m", "--date", type=str,
 #                     help="", default=today)
@@ -51,7 +54,13 @@ wv = None
 # 如果是调试
 if args.t:
     args.wv='./wv'
-    args.data='./data_preprocess_small'
+    # args.train='./data_preprocess_small'
+    # args.val='./data_preprocess_small'
+    args.word_vector_dim=100
+    # args.batch_size=1
+
+args.train_num = len(list(open(args.train)))
+args.val_num = len(list(open(args.val)))
 
 logging.basicConfig(
     format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
@@ -87,7 +96,7 @@ def get_model():
     output = Dense(1, activation="sigmoid")(merge_layer)
     model = Model(inputs=[input1, input2], outputs=output)
     model.compile(loss="binary_crossentropy",
-                  optimizer=SGD(), metrics=['accuracy'])
+                  optimizer='nadam', metrics=['accuracy'])
     return model
 
 
@@ -104,11 +113,8 @@ def get_word_seq_from_question(q):
     return seq
 
 
-def get_data():
-    x1 = []
-    x2 = []
-    y = []
-    for line in tqdm(list(open(args.data))):
+def generate_data(file_name):
+    for line in open(file_name):
         l = line.strip().split('\t')
 
         if len(l)!=3:
@@ -119,25 +125,21 @@ def get_data():
         q2 = l[1].split(',')
         label = np.array([int(l[2])])
 
-        q1_seq = get_word_seq_from_question(q1)
-        q2_seq = get_word_seq_from_question(q2)
+        q1_seq = np.expand_dims(get_word_seq_from_question(q1), axis=0)
+        q2_seq = np.expand_dims(get_word_seq_from_question(q2), axis=0)
 
-        x1.append(q1_seq)
-        x2.append(q2_seq)
-        y.append(label)
 
-    x1 = np.stack(x1)
-    x2 = np.stack(x2)
-    y = np.stack(y)
-
-    return x1, x2, y
-
+        yield [q1_seq, q2_seq], [label]
 
 
 if __name__ == "__main__":
     init()
-    x1, x2, y = get_data()
     model = get_model()
-    model.fit(x=[x1, x2], y=y, batch_size=1000,
-              epochs=args.epochs, validation_split=0.2)
+    # print args.batch_size
+    model.fit_generator(
+        generator=generate_data(args.train),
+        steps_per_epoch=args.train_num // args.batch_size,
+        epochs=args.epochs)
+        # validation_data=generate_data(args.val),
+        # validation_steps=args.val_num // args.batch_size)
     model.save_weights('model.h5')
