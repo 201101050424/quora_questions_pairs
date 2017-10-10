@@ -9,6 +9,7 @@ import argparse
 import logging
 import pandas as pd
 import sys
+import csv
 
 from tqdm import tqdm
 from nltk.corpus import stopwords
@@ -17,6 +18,7 @@ from string import punctuation
 from keras.optimizers import SGD
 
 from gensim.models import KeyedVectors
+from nltk.corpus import stopwords
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Input, LSTM, Embedding, Dropout, Activation
@@ -25,58 +27,107 @@ from keras.models import Model
 from keras.layers.normalization import BatchNormalization
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from gensim.models import Word2Vec
+from conf import *
 
-parser = argparse.ArgumentParser(description='')
-parser.add_argument("-word2vec", type=str, help="word2vec地址（所有词）",
-                    default="/home/xueguoqing01/.keras/models/GoogleNews-vectors-negative300.bin")
-parser.add_argument("-word2vec_small", type=str, help="word2vec地址（部分词）",
-                    default="./wv")
-parser.add_argument("-data", type=str, help="全部数据", default="./train.csv")
-parser.add_argument("-data_preprocess", type=str,
-                    help="预处理过后的数据", default="./data_preprocess")
-parser.add_argument("-max_seq_len", type=int, help="最大单词数", default=120)
-parser.add_argument("-word_vector_dim", type=int, help="词向量维度", default=300)
-parser.add_argument("-lstm_output_dim", type=int,
-                    help="lstm输出维度", default=1000)
-# parser.add_argument("-m", "--date", type=str,
-#                     help="", default=today)
-# parser.add_argument("-e", help="", nargs='+',
-#                     action="store", required=True)
-# parser.add_argument("-ne", help="", nargs='+',
-#                     action="store", default=[])
-# parser.add_argument("-t", type=str,
-#                     help="", choices=['kmtl', 'msu'], required=True)
-args = parser.parse_args()
+def text_to_wordlist(text, remove_stopwords=False, stem_words=False):
+    # Clean the text, with the option to remove stopwords and to stem words.
+    
+    # Convert words to lower case and split them
+    text = text.lower().split()
 
-word_set = set([])
+    # Optionally, remove stop words
+    if remove_stopwords:
+        stops = set(stopwords.words("english"))
+        text = [w for w in text if not w in stops]
+    
+    text = " ".join(text)
+
+    # Clean the text
+    text = re.sub(r"[^A-Za-z0-9^,!.\/'+-=]", " ", text)
+    text = re.sub(r"what's", "what is ", text)
+    text = re.sub(r"\'s", " ", text)
+    text = re.sub(r"\'ve", " have ", text)
+    text = re.sub(r"can't", "cannot ", text)
+    text = re.sub(r"n't", " not ", text)
+    text = re.sub(r"i'm", "i am ", text)
+    text = re.sub(r"\'re", " are ", text)
+    text = re.sub(r"\'d", " would ", text)
+    text = re.sub(r"\'ll", " will ", text)
+    text = re.sub(r",", " ", text)
+    text = re.sub(r"\.", " ", text)
+    text = re.sub(r"!", " ! ", text)
+    text = re.sub(r"\/", " ", text)
+    text = re.sub(r"\^", " ^ ", text)
+    text = re.sub(r"\+", " + ", text)
+    text = re.sub(r"\-", " - ", text)
+    text = re.sub(r"\=", " = ", text)
+    text = re.sub(r"'", " ", text)
+    text = re.sub(r"(\d+)(k)", r"\g<1>000", text)
+    text = re.sub(r":", " : ", text)
+    text = re.sub(r" e g ", " eg ", text)
+    text = re.sub(r" b g ", " bg ", text)
+    text = re.sub(r" u s ", " american ", text)
+    text = re.sub(r"\0s", "0", text)
+    text = re.sub(r" 9 11 ", "911", text)
+    text = re.sub(r"e - mail", "email", text)
+    text = re.sub(r"j k", "jk", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    
+    # Optionally, shorten words to their stems
+    if stem_words:
+        text = text.split()
+        stemmer = SnowballStemmer('english')
+        stemmed_words = [stemmer.stem(word) for word in text]
+        text = " ".join(stemmed_words)
+    
+    # Return a list of words
+    return text.split()
 
 if __name__ == "__main__":
-    d = pd.read_csv(args.data, header=None)
+    # parser = argparse.ArgumentParser(description='')
+    # parser.add_argument("-t", help="是否调试", action="store_true")
+    # args = parser.parse_args()
+    # if args.t:
+    #     wv_path = './wv'
+    #     train_path = 'train.csv_small'
 
-    f_data_output = open(args.data_preprocess, 'w')
-    for i, row in tqdm(list(enumerate(d.values))):
-        try:
-            nl = []
+    wv = KeyedVectors.load_word2vec_format(wv_path, binary=True)
+    reader = csv.reader(open(train_path))
 
-            q1 = row[3]
-            q2 = row[4]
+    word_index = {}
+    word_index['<<PAD>>'] = 0
+    f_data_output = open(train_preprocess_path, 'w')
+    for row in tqdm(list(reader)):
+        assert(len(row) == 6)
+        nl = []
 
-            def deal_problem(q):
-                q = q.split()
-                stop_word = set([',', '?', '.', '!', '"', ';'])
-                q = [a for a in q if a not in stop_word]
-                q = [''.join([c for c in a if c not in stop_word]) for a in q]
-                return ','.join(q)
+        q1 = text_to_wordlist(row[3])
+        q2 = text_to_wordlist(row[4])
 
-            q1 = deal_problem(q1)
-            q2 = deal_problem(q2)
-
+        def get_nq(q):
+            nq = []
             for word in q1:
-                word_set.add(word)
+                if word not in wv.vocab:
+                    continue
+                if word not in word_index:
+                    word_index[word] = len(word_index)
+                nq.append(str(word_index[word]))
+            while len(nq) < max_seq_len:
+                nq.append('0')
+            return nq[:max_seq_len]
+        
+        nq1 = get_nq(q1)
+        nq2 = get_nq(q2)
 
-            for word in q2:
-                word_set.add(word)
+        nl.append(','.join(nq1))
+        nl.append(','.join(nq2))
+        nl.append(row[-1])
+        f_data_output.write('\t'.join(nl)+'\n')
 
-            f_data_output.write('\t'.join([q1, q2, str(row[5])]) + '\n')
-        except:
-            print row
+
+    embedding_weight = np.zeros((len(word_index), word_vector_dim))
+    for k in tqdm(word_index):
+        if k == '<<PAD>>':
+            continue
+        embedding_weight[word_index[k]] = wv[k].astype(float)
+    np.save(embedding_weight_path, embedding_weight)
