@@ -171,10 +171,12 @@ class Model(nn.Module):
         self.lstm2 = nn.LSTM(word_vector_dim, num_lstm, batch_first=True)
         self.fc1 = nn.Linear(num_lstm * 2, num_dense)
         self.fc2 = nn.Linear(num_dense, num_dense)
-        self.fc3 = nn.Linear(num_dense, 1)
+        self.fc3 = nn.Linear(num_dense, 2)
         # self.sig = nn.Sigmoid()
 
     def forward(self, q1, q2):
+        
+        print 'in forward'
         # x = self.fc1(Variable(torch.randn((num_lstm * 2, num_dense)).cuda()))
 
         # print type(q1.data)
@@ -214,7 +216,7 @@ class Model(nn.Module):
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = F.sigmoid(self.fc3(x))
+        x = F.log_softmax(self.fc3(x))
         # x = self.sig(x)
 
         # print x.data.shape
@@ -239,7 +241,7 @@ if __name__ == "__main__":
     parser.add_argument("-t", help="是否调试", action="store_true")
     args = parser.parse_args()
 
-    # use_cuda = False
+    use_cuda = False
     use_cuda = True
     # if args.t:
     #     wv_path = './wv'
@@ -259,6 +261,10 @@ if __name__ == "__main__":
     # model = Model().cuda()
     print model
     optimizer = optim.SGD(model.parameters(), lr=1e-3)
+    if use_cuda:
+        criterion = nn.CrossEntropyLoss().cuda()
+    else:
+        criterion = nn.CrossEntropyLoss()
 
     for i in range(epoch_num):
 
@@ -267,23 +273,30 @@ if __name__ == "__main__":
 
             if use_cuda:
                 input1 = batch[0].cuda()
-                input2 = batch[0].cuda()
+                input2 = batch[1].cuda()
+                labels = batch[2][:].squeeze(1).cuda()
             else:
                 input1 = batch[0]
-                input2 = batch[0]
+                input2 = batch[1]
+                labels = batch[2][:].squeeze(1)
 
 
             outputs = model(Variable(input1), Variable(input2))
-            # labels = Variable(batch[-1][:].squeeze(1)).cuda()
+            labels = Variable(labels)
 
             # print batch[-1][:].squeeze(1).shape
             # print labels.data.shape
             # outputs = model(Variable(batch[0]), Variable(batch[1]))
-            # optimizer.zero_grad()
+            # print labels.data.shape
+            # print type(labels.data)
             # for i in range(data_loader.batch_size):
             #     outputs = model(Variable(batch[0][i]), Variable(batch[1][i]))
             # sys.exit(1)
-            # criterion = nn.CrossEntropyLoss().cuda()
-            # loss = criterion(outputs, labels)
+
+            # print outputs.data
+            # print labels.data
+
+            optimizer.zero_grad()
+            loss = criterion(outputs, labels)
 
             # running_loss += loss
