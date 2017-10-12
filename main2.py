@@ -176,21 +176,6 @@ class Model(nn.Module):
 
     def forward(self, q1, q2):
         
-        print 'in forward'
-        # x = self.fc1(Variable(torch.randn((num_lstm * 2, num_dense)).cuda()))
-
-        # print type(q1.data)
-
-        # print type(q1)
-        # print type(q2)
-
-        # print q1.data.shape
-        # print q2.data.shape
-
-        # q1 = q1.view(q1.data.shape[1], q1.data.shape[0], -1)
-        # q2 = q2.view(q2.data.shape[1], q2.data.shape[0], -1)
-        # print q1.data.shape
-
         q1 = self.embedding(q1)
         q2 = self.embedding(q2)
 
@@ -200,38 +185,11 @@ class Model(nn.Module):
         x1 = x1[:, -1, :]
         x2 = x2[:, -1, :]
 
-        # print x1.data.shape
-        # print x2.data.shape
-
         x = torch.cat([x1, x2], 1)
-        # print type(x.data)
-        # print type(x1.data)
-        # print x.data.shape 
-        # print type(x)
-        # print x.data.shape
-
-        # print type(x1)
-        # print type(x1)
-        # q1 = Variable(torch.FloatTensor(q1))
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.log_softmax(self.fc3(x))
-        # x = self.sig(x)
-
-        # print x.data.shape
-
-        # print x.data.shape
-        # x = self.fc1(Variable(torch.randn((num_lstm * 2, num_dense)).cuda()))
-
-        # layer1 = nn.LSTM((max_seq_len, word_vector_dim), num_lstm)(q1)
-        # layer2 = nn.LSTM((max_seq_len, word_vector_dim), num_lstm)(q2)
-        # layer = nn.cat([layer1, layer2])
-        # layer = nn.Linear(num_lstm * 2, num_dense)(layer)
-        # layer = nn.Relu(num_lstm * 2, num_dense)(layer)
-        # layer = nn.Linear(num_dense, num_dense)(layer)
-        # layer = nn.Relu(num_lstm * 2, num_dense)(layer)
-        # layer = nn.Sigmoid()(layer)
 
         return x
 
@@ -243,12 +201,6 @@ if __name__ == "__main__":
 
     use_cuda = False
     use_cuda = True
-    # if args.t:
-    #     wv_path = './wv'
-
-    # global wv
-    # wv = KeyedVectors.load_word2vec_format(wv_path, binary=True)
-    # reader = csv.reader(open(train_path))
 
     data_loader = torch.utils.data.DataLoader(
         Dataset(train_preprocess_path), batch_size=2000)
@@ -258,7 +210,6 @@ if __name__ == "__main__":
     else:
         model = Model()
 
-    # model = Model().cuda()
     print model
     optimizer = optim.SGD(model.parameters(), lr=1e-3)
     if use_cuda:
@@ -268,35 +219,29 @@ if __name__ == "__main__":
 
     for i in range(epoch_num):
 
-        running_loss = 0
+        loss_list = []
         for batch in tqdm(data_loader):
 
             if use_cuda:
                 input1 = batch[0].cuda()
                 input2 = batch[1].cuda()
-                labels = batch[2][:].squeeze(1).cuda()
+                label = batch[2][:].squeeze(1).cuda()
             else:
                 input1 = batch[0]
                 input2 = batch[1]
-                labels = batch[2][:].squeeze(1)
+                label = batch[2][:].squeeze(1)
 
 
-            outputs = model(Variable(input1), Variable(input2))
-            labels = Variable(labels)
+            output = model(Variable(input1), Variable(input2))
 
-            # print batch[-1][:].squeeze(1).shape
-            # print labels.data.shape
-            # outputs = model(Variable(batch[0]), Variable(batch[1]))
-            # print labels.data.shape
-            # print type(labels.data)
-            # for i in range(data_loader.batch_size):
-            #     outputs = model(Variable(batch[0][i]), Variable(batch[1][i]))
-            # sys.exit(1)
-
-            # print outputs.data
-            # print labels.data
+            label = Variable(label)
 
             optimizer.zero_grad()
-            loss = criterion(outputs, labels)
+            loss = F.nll_loss(output, label)
+            loss.backward()
+            optimizer.step()
+            loss_list.append(loss.data[0])
 
-            # running_loss += loss
+        print 'epoch:%d, avg_loss=%lf' % (i, sum(loss_list) / len(loss_list))
+        if i % model_save_interval == 0:
+            torch.save(model.state_dict(), '%s/model_%d' % (model_path, i))
